@@ -482,5 +482,113 @@ clean_time 表示每间隔自动清除的时间。clean_time=1m 1分钟清除一
 
 	2.7 location 正规模块
 
+	url 重写 
+
+	location 正则匹配
+
+	location ~ \.php${
+		fastcgi_pass 127.0.0.1:9000;
+		fastcgi_index index.php;
+		include  fastcgi.conf;
+	}
+
+	我们用~来表示location开启正则匹配, 这样：location ~。还可以用这个来匹配静态资源，缓存它们，设置过期时间：
+
+	location ~ .*\.(gif|jpg|jpeg|bmp|png|ico|txt|mp3|mp4|swf){
+	    expires 15d;
+	}
+	location ~ .*\.(css|js){
+    	expires 12h;
+	}
+
+	expires 用来设置HTTP应答中的Expires和Cache-Control的头标时间，来告诉浏览器访问这个静态文件时，不用再去请求服务器，直接从本地缓存读取就可以了。
+
+	可以在time值中使用正数或负数。“Expires”头标的值将通过当前系统时间加上您设定的 time 值来获得。可以设置的参数如下：
+
+
+
+	比如再看个例子: 控制图片等过期时间为30天
+
+	我们还可以控制哪一个文件目录的时间，比如控制匹配/resource/或者/mediatorModule/里所有的文件缓存设置到最长时间。
+
+
+	location ~ /(resource|mediatorModule)/ {
+    root    /opt/demo;
+    expires max;
+	}	
+
+	2.8 URL 重写模块
+
+	1 
+	location /download/ {
+		if($forbidden){
+			return 403;
+		}
+
+		if($slow){
+			limit_rate 10k;
+		}
+
+		rewrite ^/(download/.*)/media/(.*)\..*$  /$1/mp3/$2.mp3 break;
+    	......
+	}
+
+	location / {
+    root   html;
+    index  index.html index.htm;
+    rewrite ^/bbs/(.*)$ http://192.168.18.201/forum/$1;
+	}
+
+	1.break
+	2.if
+	3.return
+	4:rewrite
+
+	rewrite用来重写url,有3个位置：
+
+	regex 表示用来匹配的正则
+
+	replacement 表示用来替换的
+
+	flag 是尾部的标记
+
+
+	上面的正则表达式的一部分可以用圆括号，方便之后按照顺序用$1-$9来引用。
+
+
+
+	需要将/photos/123456重写成/path/to/photos/12/1234/123456.png
+	可以这样：
+
+	rewrite  "/photos/([0-9] {2})([0-9] {2})([0-9] {2})" /path/to/photos/$1/$1$2/$1$2$3.png;
+	下面是一些简单的常见的重写：
+
+	rewrite ^/js/base.core.v3.js /js/base.core.v3.dev.js redirect;
+	rewrite ^/js/comment.frame.js /js/comment.frame.dev.js redirect;
+	rewrite ^/live-static/(.*)$ http://live.bilibili.com/public/$1 last;
+
+
+
+	2.9 配置管理
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
