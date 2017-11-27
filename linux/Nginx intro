@@ -1,0 +1,408 @@
+
+
+Nginx 请求反向代理
+
+浏览器端请求发起过程，通过 DNS 域名解析代理服务器IP，并建立 TCP 连接。
+
+反向代理（Reverse Proxy）方式，指以代理服务器来接受internet上的连接请求，
+然后将请求转发给内部网络上的服务器，并将从服务器上得到的结果返回给internet
+上请求连接的客户端，此时代理服务器对外就表现为一个服务器。
+
+
+结论就是，反向代理服务器对于客户端而言它就像是原始服务器，并且客户端不需要
+进行任何特别的设置。
+
+客户端向反向代理的命名空间(name-space)中的内容发送普通请求，接着反向代理
+服务器将判断向何处(原始服务器)转交请求，并将获得的内容返回给客户端，就像这
+些内容原本就是它自己的一样。
+
+
+结论就是，正向代理是一个位于客户端和原始服务器(origin server)之间的服务器。
+为了从原始服务器取得内容，客户端向代理发送一个请求并指定目标(原始服务器)，
+然后代理向原始服务器转交请求并将获得的内容返回给客户端。
+
+
+
+Nginx 的启动和 关闭
+
+Mac brew安装
+
+/usr/local/bin/nginx #启动
+/usr/local/bin/nginx -s reload #平滑重启
+/usr/local/etc/nginx/nginx.cnf #配置文件
+
+
+main # 全局设置
+events { #Nginx 工作模式
+	...
+}
+http { #http 设置
+	...
+	upstream myproject{ #负载均衡服务器设置
+		...
+	}
+	server{ # 主机设置
+		...
+		location{	# URL 匹配
+
+		}
+	}
+	server{
+		...
+		location{
+			...
+		}
+	}
+}
+
+
+2.2.1 main 模块
+
+main区域， 它是一个 全局的 设置：
+user nobody nobody;
+wroker_processcess 2;
+error_log /usr/local/var/log/nginx/error.log notice;
+pid /usr/local/var/run/nginx/nginx.pid;
+worker_rlimit_nofile 1024
+
+user 来指定 Nginx Worker 进程运行用户以及用户组，默认由nobody账号运行。
+
+worker_processes 来指定了Nginx要开启的子进程数。每个Nginx进程平均耗费
+10M~12M内存。根据经验，一般指定1个进程就足够了，如果是多核CPU，建议指定
+和CPU的数量一样的进程数即可。我这里写2，那么就会开启2个子进程，总共3个进程。
+
+error_log 来定义全局错误日志文件。日志输出级别有debug、info、notice、
+warn、error、crit可供选择，其中，debug输出日志最为最详细，而crit输出
+日志最少。
+
+
+pid 来指定进程id的存储文件位置。
+
+worker_rlimit_nofile 来指定一个nginx进程可以打开的最多文件描述符数目，
+这里是65535，需要使用命令“ulimit -n 65535”来设置。
+
+
+2.2.2 events模块
+
+events模块来用指定 nginx 的 工作模式 和工作模式及连接数上限，一般是这样：
+
+events{
+	use kqueue; #mac平台
+	worker_connections 1024;
+}
+
+
+use 用来指定Nginx的工作模式。Nginx支持的工作模式有select、poll、kqueue、
+epoll、rtsig和/dev/poll。其中select和poll都是标准的工作模式，kqueue和
+epoll是高效的工作模式，不同的是epoll用在Linux平台上，而kqueue用在BSD系
+统中，因为Mac基于BSD,所以Mac也得用这个模式，对于Linux系统，epoll工作模式是首选。
+
+worker_connections 用于定义Nginx每个进程的最大连接数，即接收前端的最大请求数，
+默认是1024。最大客户端连接数由worker_processes和worker_connections决定，
+即Max_clients = worker_processes * worker_connections，在作为反向代理时，
+Max_clients变为：Max_clients = worker_processes * worker_connections / 4。
+
+进程的最大连接数受Linux系统进程的最大打开文件数限制，在执行操作系统命令“ulimit 
+-n 65536”后worker_connections的设置才能生效。
+
+
+2.2.3 http 模块
+
+http模块可以说是最核心的模块了，它负责HTTP服务器相关属性的配置，
+它里面的server和upstream子模块，
+
+	http{
+		include mine.types;
+		default_type application/octet-stream;
+		log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+        access_log /usr/local/var/log/nginx/access.log main;
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive-timeout 10;
+        #gzip on;
+        upstream myproject {
+        	.....
+    	}
+    	server {
+        	....
+    	}
+	}
+	
+1: include 
+	用来设定文件的mime类型,类型在配置文件目录下的mime.type文件定义，
+	来告诉nginx来识别文件类型。	
+2: default_type
+	设定了默认的类型为二进制流，也就是当文件类型未定义时使用这种方式，
+	例如在没有配置asp的locate 环境时，Nginx是不予解析的，此时，用浏览器访问asp文件就会出现下载窗口了。
+3: log_format
+	用于设置日志的格式，和记录哪些参数，这里设置为main，刚好用于access_log来纪录这种类型。
+
+	main的类型日志如下：也可以增删部分参数。
+
+	127.0.0.1 - - [21/Apr/2015:18:09:54 +0800] "GET /index.php HTTP/1.1" 200 87151 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.76 Safari/537.36"
+
+4: access_log 
+	
+	用来纪录每次的访问日志的文件地址，后面的main是日志的格式样式，对应于log_format的main。
+
+5: sendfile	
+	用于开启高效文件传输模式。将tcp_nopush和tcp_nodelay两个指令设置为on用于防止网络阻塞。
+
+
+6: keepalive_timeout
+
+    设置客户端连接保持活动的超时时间。在超过这个时间之后，服务器会关闭该连接。
+
+
+2.2.4  server 模块
+
+	server模块是http的子模块，它用来定一个虚拟主机。
+
+	server{
+		listen 8080;
+		server_name localhost 192.168.12.10 www.yangyi.com;
+		# 全局定义 如果都是这一个目录，这样定义最简单。
+		root /Users/yangyi/www;
+		index index.php index.html index.htm;
+		charset utf-8;
+		access_log usr/local/var/log/host.access.log main;
+		error_log usr/local/var/log/host.error.log error;
+		...
+	}
+
+	server 标志 定义虚拟主机开始
+	listen 用于指定虚拟主机的服务端口
+	server_name 用来指定IP地址或者域名，多个域名之间用空格分开。
+	root 表示在这整个server虚拟主机内，全部的root web根目录。注意要和locate {}下面定义的区分开来。
+	index 全局定义访问的默认首页地址。注意要和locate {}下面定义的区分开来。
+	charset 用于设置网页的默认编码格式。
+	access_log 用来指定此虚拟主机的访问日志存放路径，最后的main用于指定访问日志的输出格式。
+
+
+2.2.5 location 模块
+
+	location模块是nginx中用的最多的，也是最重要的模块了，什么负载均衡啊、反向代理啊、
+	虚拟域名啊都与它相关。
+
+	location根据它字面意思就知道是来定位的，定位URL，解析URL，
+	所以，它也提供了强大的正则匹配功能，也支持条件判断匹配，用户可以通过location指令
+	实现Nginx对动、静态网页进行过滤处理。像我们的php环境搭建就是用到了它。
+
+	1: 设定默认首页和虚拟机目录
+	location / {
+		root /Users/yangyi/www;
+		index index.php index.html index.htm
+	}
+
+	location / 表示匹配访问根目录。
+
+	root 指令用于指定访问根目录时，虚拟主机的web目录，
+	这个目录可以是相对路径（相对路径是相对于nginx的安装目录）。也可以是绝对路径。
+
+	index 用于设定我们只输入域名后访问的默认首页地址，有个先后顺序：index.php index.html index.htm，如果没有开启目录浏览权限，又找不到这些默认首页，就会报403错误。
+
+
+	2: 还有一种方式就是正则匹配，开启正则匹配这样：location ~。后面加个~
+
+	下面这个例子是运用正则匹配来链接php
+
+		location ~ \.php$ {
+			root /Users/yangyi/www;
+			fastcgi_pass 127.0.01:9000;
+			fastcgi_index index.php;
+			include fastcgi.conf;
+		}
+
+		.php$ 熟悉正则的我们直到，这是匹配.php结尾的URL，用来解析php文件。
+		里面的root也是一样，用来表示虚拟主机的根目录。
+
+
+		fastgi_pass 链接的是 php-fpm的地址，
+
+	2.2.6 upstream 模块
+
+	upstream 模块负责负载均衡模块，通过一个简单的调度算法来实现客户端IP到后端服务器的负载均衡。
+
+
+	upstream iyangyi.com{
+		ip_hash;
+		server 192.168.12.1:80;
+		server 192.168.12.2.80 down;
+		server 192.168.12.3.8080 max_fails=3  fail_timeout=20s;
+		server 192.168.12.4.8080;
+	}
+
+	通过 upstream 指令指定了一个负载均衡器的名称iyangyi.com.
+
+	里面是ip_hash这是其中的一种负载均衡调度算法，下面会着重介绍。
+	紧接着就是各种服务器了。用server关键字表识，后面接ip。
+
+
+	Nginx 的负载均衡模块目前支持 的 4种调度算法。
+	weiget 轮询（默认）
+	ip_pash
+	fair 第三方
+	url_hash 第三方
+
+
+	在 HTTP Upstream 模块中，可以通过server指令指定后端服务器的IP地址和端口，
+	同时还可以设定每个后端服务器在负载均衡调度中的状态。常用的状态有：
+
+	down
+	backup
+	max_fails
+	fail_timeout
+
+2.3 基于域名的虚拟主机 
+
+	假设我们在本地开发有 3 个项目，分别在 hosts 里映射到本地的 127.0.0.1 上。
+
+	127.0.0.1 www.iyangyi.com iyangyi.com
+	127.0.0.1 api.iyangyi.com
+	127.0.0.1 admin.iyangyi.com
+
+	有这样3个项目，分别对应于web根目录下的3个文件夹，我们用域名对应文件夹名字，这样子好记：
+
+	/Users/yangyi/www/www.iyangyi.com/
+	/Users/yangyi/www/api.iyangyi.com/
+	/Users/yangyi/www/admin.iyangyi.com/
+	每个目录下都有一个index.php文件，都是简单的输入自己的域名。
+
+
+	下面我们到搭建 3 个 域名的虚拟主机， 新建 3 个server 来完成。
+
+	建议将对虚拟主机进行配置的内容写进另外一个文件，然后通过include指令包含进来，
+	这样更便于维护和管理。不会使得这个nginx.conf内容太多：
+
+	main
+	events{
+	...
+	}
+	http{
+		...
+		include vhost/www.iyangyi.conf;
+    	include vhost/api.iyangyi.conf;
+    	include vhost/admin.iyangyi.conf;
+    	# 或者用 *.conf  包含
+    	# include vhost/*.conf
+
+
+	}
+
+	include：主模块指令，实现对配置文件所包含的文件的设定，可以减少主配置文件的复杂度。
+
+	既然每一个conf都是一个server.
+
+	# www.iyangyi.conf
+	server {
+    	listen 80;
+    	server_name www.iyangyi.com iyangyi.com;
+
+    	root /Users/yangyi/www/www.iyangyi.com/;
+    	index index.php index.html index.htm;
+
+    	access_log /usr/local/var/log/nginx/www.iyangyi.access.log main;
+    	error_log /usr/local/var/log/nginx/www.iyangyi.error.log error;
+
+    	location ~ \.php$ {
+        	fastcgi_pass   127.0.0.1:9000; 
+        	fastcgi_index  index.php;
+        	include        fastcgi.conf;
+    	}
+	}
+
+
+
+	2.4 反向代理
+
+	Nginx 使用反向代理，主要是使用location模块下的proxy_pass选项。
+
+	在hosts里新加上这个域名：
+	#vi ／etc/hosts
+	127.0.0.1 centos.iyangyi.com
+
+	在vhost目录中新建一个conf server：
+
+	#centos.iyangyi.conf
+	server {
+    	listen 80;
+    	server_name centos.iyangyi.com;
+
+    	access_log /usr/local/var/log/nginx/centos.iyangyi.access.log main;
+    	error_log /usr/local/var/log/nginx/centos.iyangyi.error.log error;
+
+    	location / {
+        	proxy_pass http://192.168.33.10;
+    	}
+	}
+
+	重启 nginx 
+	sudo nginx -s reload 
+
+
+	2.5 负载均衡
+
+	负载均衡的好处是可以集群多台机器一起工作，并且对外的IP和域名是一样的，
+	外界看起来就好像一台机器一样
+
+	1 基于 weight 权重的负载
+
+	upstream webservers{
+		server 192.168.33.11 weight = 10;
+		server 192.168.33.12 weight = 10;
+		server 192.168.33.13 weight = 10;
+	}
+
+	server{
+		listen 80;
+		server_name upstream.iyangyi.com;
+
+		access_log /usr/local/var/log/nginx/upstream.iyangyi.access.log main;
+  		error_log /usr/local/var/log/nginx/upstream.iyangyi.error.log error;
+
+  		location / {
+      		proxy_pass http://webservers;
+      		proxy_set_header  X-Real-IP  $remote_addr;
+  		}
+	}
+
+	max_fails : 允许请求失败的次数，默认为1。当超过最大次数时，返回proxy_next_upstream 模块定义的错误。
+
+	fail_timeout : 在经历了max_fails次失败后，暂停服务的时间。max_fails可以和fail_timeout一起使用，进行健康状态检查。
+
+	upstream webservers{
+  		server 192.168.33.11 weight=10 max_fails=2 fail_timeout=30s;
+  		server 192.168.33.12 weight=10 max_fails=2 fail_timeout=30s;
+  		server 192.168.33.13 weight=10 max_fails=2 fail_timeout=30s;
+	}
+	down： 表示这台机器暂时不参与负载均衡。相当于注释掉了。
+
+	backup： 表示这台机器是备用机器，是其他的机器不能用的时候，这台机器才会被使用，俗称备胎
+
+
+	2 基于 ip_hash 的负载
+
+	这种分配方式，每个请求按访问IP的hash结果分配，这样来自同一个IP的访客固定访问
+	一个后端服务器，有效解决了动态网页存在的session共享问题。
+
+
+
+	2.6 页面缓存
+
+	页面缓存也是日常web 开发中很重要的一个环节，对于一些页面，我们可以将其静态化，
+	保存起来，下次请求时候，直接走缓存，而不用去请求反相代理服务器甚至数据库服务了
+	。从而减轻服务器压力。
+
+	
+
+
+
+
+
+
+
+
+
