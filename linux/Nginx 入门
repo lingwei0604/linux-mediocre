@@ -1,0 +1,111 @@
+
+4: 虚拟主机
+
+server {
+	listen 80 default_server;
+	server_name _;
+	return 444; # 过滤其他域名的请求，返回444状态码
+}
+server {
+	listen 80;
+    server_name www.aaa.com; # www.aaa.com域名
+    location / {
+        proxy_pass http://localhost:8080; # 对应端口号8080
+    }
+}
+server {
+    listen 80;
+    server_name www.bbb.com; # www.bbb.com域名
+    location / {
+        proxy_pass http://localhost:8081; # 对应端口号8081
+    }
+}
+
+各个网站 跑不同的端口，然后通过域名，反向代理到各个端口。
+abc.com 在3001
+xyz.com 在3002
+
+nginx 跑80 根据域名反向代理到 3001 和 3002
+
+就是配置不同的server， 然后server_name对应网站的域名。
+
+以为每个网站设置一个vhost配置文件。都可以用80端口。
+
+
+1: 静态HTTP 服务器。
+
+首先，Nginx是一个HTTP服务器，可以将服务器上的静态文件（如HTML、图片）通过HTTP协议展现给客户端。
+配置：
+
+server {
+	listen 80; # 端口号
+	location / {
+		root /usr/share/nginx/html; # 静态文件路径
+	}
+}
+
+2: 反向代理服务器
+
+server{
+	listen 80;
+	location /{
+		proxy_pass http://192.168.20.1:8080; # 应用服务器HTTP地址
+	}
+}
+
+
+3: 负载均衡
+
+相同的应用部署在多台服务器上，将大量用户的请求分配给多台机器处理。
+
+Nginx可以通过反向代理来实现负载均衡。
+
+upstream myapp{
+	server 192.168.20.1:8080; #应用服务器1
+	server 192.168.20.2:8080; #应用服务器2
+}
+server{
+	listen 80;
+	location /{
+		proxy_pass http://myapp;
+	}
+}
+
+4: 虚拟主机
+
+有的网站，由于访问量太小，需要节省成本，将多个网站部署在同一台服务器上。
+
+例如将www.aaa.com和www.bbb.com两个网站部署在同一台服务器上，
+两个域名解析到同一个IP地址，但是用户通过两个域名却可以打开两个完全不同的网站，
+互相不影响，就像访问两个服务器一样，所以叫两个虚拟主机。
+
+server {
+	listen 80 default_server;
+	server_name _;
+	return 444; # 过滤其他域名的请求，返回444状态码
+}
+server {
+	listen 80;
+	server_name www.aaa.com; # www.aaa.com域名
+	location / {
+		proxy_pass http://localhost:8080; # 对应端口号8080
+	}
+}
+server {
+	listen 80;
+	server_name www.bbb.com; # www.bbb.com域名
+	location / {
+		proxy_pass http://localhost:8081; # 对应端口号8081
+	}
+}
+
+
+在服务器8080和8081分别开了一个应用，客户端通过不同的域名访问，
+根据server_name可以反向代理到对应的应用服务器。
+虚拟主机的原理是通过HTTP请求头中的Host是否匹配server_name来实现的，
+
+
+
+
+
+
